@@ -1,0 +1,313 @@
+// キーボードの入力状態を記録する配列の定義
+var input_key_buffer = new Array();
+
+// キーボードの入力イベントをトリガーに配列のフラグ値を更新させる
+window.addEventListener("keydown", handleKeydown);
+function handleKeydown(e) {
+  e.preventDefault();
+  input_key_buffer[e.keyCode] = true;
+}
+
+window.addEventListener("keyup", handleKeyup);
+function handleKeyup(e) {
+  e.preventDefault();
+  input_key_buffer[e.keyCode] = false;
+}
+
+// canvas要素の取得
+const canvas = document.getElementById("maincanvas");
+const ctx = canvas.getContext("2d");
+
+// 画像を表示するの座標の定義 & 初期化
+var x = 0;
+var y = 780;
+
+// 上下方向の速度
+var vy = 0;
+// ジャンプしたか否かのフラグ値
+var isJump = false;
+
+// ゲームオーバーか否かのフラグ値
+var isGameOver = false;
+
+// 移動中の場合にカウントする
+var walkingCount = 0;
+// カウントに対して画像を切り替える単位
+const walkRange = 3;
+// 右向きか否か
+var toRight = true;
+
+// ブロック-----------------------------------------------
+var blocks = [
+  { x: 0, y: 840, w: 60, h: 60 },
+  { x: 60, y: 840, w: 60, h: 60 },
+  { x: 120, y: 840, w: 60, h: 60 },
+  { x: 180, y: 840, w: 60, h: 60 },
+  { x: 240, y: 840, w: 60, h: 60 },
+  { x: 300, y: 840, w: 60, h: 60 },
+  { x: 360, y: 840, w: 60, h: 60 },
+  { x: 420, y: 840, w: 60, h: 60 },
+  { x: 480, y: 840, w: 60, h: 60 },
+];
+
+// 敵----------------------------------------------------
+var enemies = [
+  { x: 550, y: 0, isJump: true, vy: 0 },
+  { x: 750, y: 0, isJump: true, vy: 0 },
+  { x: 300, y: 180, isJump: true, vy: 0 },
+];
+//---------------------------------------------------------------
+// ロード時に画面描画の処理が実行されるようにする
+window.addEventListener("load", update);
+// 画像のロード
+const image = new Image();
+image.src = "../images/character-01/walk-right-0000.png";
+
+// 画像がロードされたら描画を開始
+image.onload = function () {
+  // ロード完了時にupdate関数を呼び出す
+  window.requestAnimationFrame(update);
+};
+
+// エラーハンドリング
+image.onerror = function () {
+  console.error("Failed to load image");
+};
+
+//実行ー－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+// 画面を更新する関数を定義 (繰り返しここの処理が実行される)
+function update() {
+  // 画面全体をクリア
+  ctx.clearRect(0, 0, 9000, 9000);
+
+  // 敵情報ごとに、位置座標を更新する
+  for (const enemy of enemies) {
+    // アップデート後の敵の座標
+    var updatedEnemyX = enemy.x;
+    var updatedEnemyY = enemy.y;
+    var updatedEnemyInJump = enemy.isJump;
+    var updatedEnemyVy = enemy.vy;
+
+    // 敵は左に固定の速度で移動するようにする
+    updatedEnemyX = updatedEnemyX - 1;
+
+    // 敵の場合にも、主人公の場合と同様にジャンプか否かで分岐
+    if (enemy.isJump) {
+      // ジャンプ中は敵の速度分だけ追加する
+      updatedEnemyY = enemy.y + enemy.vy;
+
+      // 速度を固定分だけ増加させる
+      updatedEnemyVy = enemy.vy + 0.5;
+
+      // ブロックを取得する
+      const blockTargetIsOn = getBlockTargetIsOn(
+        enemy.x,
+        enemy.y,
+        updatedEnemyX,
+        updatedEnemyY
+      );
+
+      // ブロックが取得できた場合には、そのブロックの上に立っているよう見えるように着地させる
+      if (blockTargetIsOn !== null) {
+        updatedEnemyY = blockTargetIsOn.y - 60;
+        updatedEnemyInJump = false;
+      }
+    } else {
+      // ブロックの上にいなければジャンプ中の扱いとして初期速度0で落下するようにする
+      if (
+        getBlockTargetIsOn(enemy.x, enemy.y, updatedEnemyX, updatedEnemyY) ===
+        null
+      ) {
+        updatedEnemyInJump = true;
+        updatedEnemyVy = 0;
+      }
+    }
+
+    // 算出した結果に変更する
+    enemy.x = updatedEnemyX;
+    enemy.y = updatedEnemyY;
+    enemy.isJump = updatedEnemyInJump;
+    enemy.vy = updatedEnemyVy;
+  }
+
+  // 更新後の座標
+  var updatedX = x;
+  var updatedY = y;
+
+  if (isGameOver) {
+    // 上下方向は速度分をたす
+    updatedY = y + vy;
+
+    // 落下速度はだんだん大きくなる
+    vy = vy + 0.5;
+
+    if (y > 960) {
+      // ゲームオーバーのキャラが更に下に落ちてきた時にダイアログを表示し、各種変数を初期化する
+      alert("GAME OVER");
+      isGameOver = false;
+      isJump = false;
+      updatedX = 0;
+      updatedY = 780;
+      vy = 0;
+    }
+  } else {
+    // 入力値の確認と反映
+    if (input_key_buffer[37] || input_key_buffer[39]) {
+      walkingCount = (walkingCount + 1) % (walkRange * 3);
+    } else {
+      walkingCount = 0;
+    }
+
+    if (input_key_buffer[37]) {
+      toRight = false;
+      updatedX = x - 8;
+    }
+    if (input_key_buffer[38] && !isJump) {
+      vy = -15;
+      isJump = true;
+    }
+    if (input_key_buffer[39]) {
+      toRight = true;
+      updatedX = x + 8;
+    }
+
+    // ジャンプ中である場合のみ落下するように調整する
+    if (isJump) {
+      // 上下方向は速度分をたす
+      updatedY = y + vy;
+
+      // 落下速度はだんだん大きくなる
+      vy = vy + 0.5;
+
+      // 主人公が乗っているブロックを取得する
+      const blockTargetIsOn = getBlockTargetIsOn(x, y, updatedX, updatedY);
+
+      // ブロックが取得できた場合には、そのブロックの上に立っているよう見えるように着地させる
+      if (blockTargetIsOn !== null) {
+        updatedY = blockTargetIsOn.y - 60;
+        isJump = false;
+      }
+    } else {
+      // ブロックの上にいなければジャンプ中の扱いとして初期速度0で落下するようにする
+      if (getBlockTargetIsOn(x, y, updatedX, updatedY) === null) {
+        isJump = true;
+        vy = 0;
+      }
+    }
+
+    if (y > 960) {
+      // 下まで落ちてきたらゲームオーバーとし、上方向の初速度を与える
+      isGameOver = true;
+      updatedY = 700;
+      vy = -20;
+    }
+  }
+
+  x = updatedX;
+  y = updatedY;
+
+  // すでにゲームオーバーとなっていない場合のみ敵とのあたり判定を行う必要がある
+  if (!isGameOver) {
+    // 敵情報ごとに当たり判定を行う
+    for (const enemy of enemies) {
+      // 更新後の主人公の位置情報と、敵の位置情報とが重なっているかをチェックする
+      var isHit = isAreaOverlap(x, y, 60, 60, enemy.x, enemy.y, 60, 60);
+
+      if (isHit) {
+        if (isJump && vy > 0) {
+          // ジャンプしていて、落下している状態で敵にぶつかった場合には
+          // 敵を消し去る(見えない位置に移動させる)とともに、上向きにジャンプさせる
+          vy = -7;
+          enemy.y = 1000;
+        } else {
+          // ぶつかっていた場合にはゲームオーバーとし、上方向の初速度を与える
+          isGameOver = true;
+          vy = -15;
+        }
+      }
+    }
+  }
+
+  // 敵の画像を表示
+  var enemyImage = new Image();
+  enemyImage.src = "../images/character-02/base.png";
+
+  // 敵情報ごとに当たり判定を行う
+  for (const enemy of enemies) {
+    ctx.drawImage(enemyImage, enemy.x, enemy.y, 60, 60);
+  }
+
+  // 主人公の画像を表示
+  var image = new Image();
+  if (isGameOver) {
+    // ゲームオーバーの場合にはゲームオーバーの画像が表示する
+    image.src = "../images/character-01/gameover(1).png";
+  } else if (isJump) {
+    image.src = `../images/character-01/janp-${
+      toRight ? "right" : "left"
+    }-000.png`;
+  } else {
+    image.src = `../images/character-01/walk-${toRight ? "right" : "left"}-${
+      "000" + Math.floor(walkingCount / walkRange)
+    }.png`;
+  }
+  ctx.drawImage(image, x, y, 60, 60);
+
+  // 地面の画像を表示
+  var groundImage = new Image();
+  groundImage.src = "../images/ground-01/base.png";
+  for (const block of blocks) {
+    ctx.drawImage(groundImage, block.x, block.y, block.w, block.h);
+  }
+
+  // 再描画
+  window.requestAnimationFrame(update);
+}
+
+// 変更前後のxy座標を受け取って、ブロック上に存在していればそのブロックの情報を、存在していなければnullを返す
+function getBlockTargetIsOn(x, y, updatedX, updatedY) {
+  // 全てのブロックに対して繰り返し処理をする
+  for (const block of blocks) {
+    if (y + 60 <= block.y && updatedY + 60 >= block.y) {
+      if (
+        (x + 60 <= block.x || x >= block.x + block.w) &&
+        (updatedX + 60 <= block.x || updatedX >= block.x + block.w)
+      ) {
+        // ブロックの上にいない場合には何もしない
+        continue;
+      }
+      // ブロックの上にいる場合には、そのブロック要素を返す
+      return block;
+    }
+  }
+  // 最後までブロック要素を返さなかった場合はブロック要素の上にいないということなのでnullを返却する
+  return null;
+}
+
+/**
+ * 2つの要素(A, B)に重なる部分があるか否かをチェックする
+ * 要素Aの左上の角の座標を(ax, ay)、幅をaw, 高さをahとする
+ * 要素Bの左上の角の座標を(bx, by)、幅をbw, 高さをbhとする
+ */
+function isAreaOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  // A要素の左側の側面が、Bの要素の右端の側面より、右側にあれば重なり得ない
+  if (bx + bw < ax) {
+    return false;
+  }
+  // B要素の左側の側面が、Aの要素の右端の側面より、右側にあれば重なり得ない
+  if (ax + aw < bx) {
+    return false;
+  }
+
+  // A要素の上側の側面が、Bの要素の下端の側面より、下側にあれば重なり得ない
+  if (by + bh < ay) {
+    return false;
+  }
+  // B要素の上側の側面が、Aの要素の下端の側面より、上側にあれば重なり得ない
+  if (ay + ah < by) {
+    return false;
+  }
+
+  // ここまで到達する場合には、どこかしらで重なる
+  return true;
+}
